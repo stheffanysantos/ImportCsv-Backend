@@ -22,7 +22,6 @@ const upload = multer({ storage });
 const formatCurrency = (value) =>
   value ? parseFloat(value.replace('R$', '').replace('.', '').replace(',', '.')) || 0 : 0;
 
-// Atualização para retornar apenas a data, sem a hora
 const formatDate = (date) => {
   if (!date || date.trim() === '' || date === '01/01/0001 00:00:00') {
     console.warn('⚠️ Data inválida detectada:', date);
@@ -37,10 +36,8 @@ const formatDate = (date) => {
     return null;
   }
 
-  // Retorna apenas a data, no formato YYYY-MM-DD
-  return parsedDate;
+  return parsedDate.format('YYYY-MM-DD');
 };
-
 
 router.post('/upload', upload.single('arquivo'), (req, res) => {
   if (!req.file) {
@@ -52,58 +49,54 @@ router.post('/upload', upload.single('arquivo'), (req, res) => {
   let lineCount = 0;
   let columnMapping = {};
 
-
   fs.createReadStream(filePath)
     .pipe(csv({ separator: ';', headers: false }))
     .on('data', (data) => {
       console.log('Linha bruta do CSV:', data);
       lineCount++;
 
-      if (lineCount === 1 || lineCount === 2) return;
-
-      if (lineCount > 3) {
+      // Mapeia as colunas na terceira linha
+      if (lineCount === 2) {
         columnMapping = {
-          [data[0]]: 'stonecode',
-          [data[1]]: 'datadavenda',
-          [data[2]]: 'bandeira',
-          [data[3]]: 'produto',
-          [data[4]]: 'stoneid',
-          [data[5]]: 'qtddeparcelas',
-          [data[6]]: 'valorbruto',
-          [data[7]]: 'valorliquido',
-          [data[8]]: 'descontodemdr',
-          [data[9]]: 'descontodeantecipacao',
-          [data[10]]: 'numerocartao',
-          [data[11]]: 'meiodecaptura',
-          [data[12]]: 'numeroserie',
-          [data[13]]: 'ultimostatus',
-          [data[14]]: 'dataultimostatus',
+          0: 'stonecode',
+          1: 'datadavenda',
+          2: 'bandeira',
+          3: 'produto',
+          4: 'stoneid',
+          5: 'qtddeparcelas',
+          6: 'valorbruto',
+          7: 'valorliquido',
+          8: 'descontodemdr',
+          9: 'descontodeantecipacao',
+          10: 'numerocartao',
+          11: 'meiodecaptura',
+          12: 'numeroserie',
+          13: 'ultimostatus',
+          14: 'dataultimostatus',
         };
         console.log('📌 Cabeçalhos detectados:', columnMapping);
         return;
       }
 
-      
-      
-      //console.log(new Date(data[columnMapping['DATADAVENDA']]));
-      //console.log(formatDate(data[columnMapping['DATADAVENDA']]));
+      // Pula a primeira e segunda linha
+      if (lineCount === 1 || lineCount === 2) return;
+
       results.push({
-        stonecode: data[columnMapping['STONECODE']] || null,
-        datadavenda: formatDate(data[columnMapping['DATADAVENDA']]),
-        datadavenda: new Date(data[columnMapping['DATADAVENDA']]),
-        bandeira: data[columnMapping['BANDEIRA']] || null,
-        produto: data[columnMapping['PRODUTO']] || null,
-        stoneid: data[columnMapping['STONEID']] || null,
-        qtddeparcelas: parseInt(data[columnMapping['QTDDEPARCELAS']]) || null,
-        valorbruto: formatCurrency(data[columnMapping['VALORBRUTO']]),
-        valorliquido: formatCurrency(data[columnMapping['VALORLIQUIDO']]),
-        descontodemdr: formatCurrency(data[columnMapping['DESCONTODEMDR']]),
-        descontodeantecipacao: formatCurrency(data[columnMapping['DESCONTODEANTECIPACAO']]),
-        numerocartao: data[columnMapping['NUMEROCARTAO']] || null,
-        meiodecaptura: data[columnMapping['MEIODECAPTURA']] || null,
-        numeroserie: data[columnMapping['NUMEROSERIE']] || null,
-        ultimostatus: data[columnMapping['ULTIMOSTATUS']] || null,
-        dataultimostatus: new Date(data[columnMapping['DATAULTIMOSTATUS']]),
+        stonecode: data[0] || null,
+        datadavenda: formatDate(data[1]),
+        bandeira: data[2] || null,
+        produto: data[3] || null,
+        stoneid: data[4] || null,
+        qtddeparcelas: parseInt(data[5]) || null,
+        valorbruto: formatCurrency(data[6]),
+        valorliquido: formatCurrency(data[7]),
+        descontodemdr: formatCurrency(data[8]),
+        descontodeantecipacao: formatCurrency(data[9]),
+        numerocartao: data[10] || null,
+        meiodecaptura: data[11] || null,
+        numeroserie: data[12] || null,
+        ultimostatus: data[13] || null,
+        dataultimostatus: formatDate(data[14]),
       });
     })
     .on('end', async () => {
