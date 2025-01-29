@@ -1,0 +1,143 @@
+CONECTAR AS TABELAS POR TIPO 
+
+UPDATE movements m
+INNER JOIN transactions t ON m.NumeroSerie = t.NumeroSerie
+INNER JOIN historicocredito h ON 
+  (t.produto = 'Crédito 1x' AND h.tipo = 'credito') OR
+  (t.produto = 'Débito Pré-pago' AND h.tipo = 'debito') OR
+  (t.produto = 'Voucher' AND h.tipo = 'alimentacao')
+SET m.TotalPorcentage = 
+  CASE
+    WHEN t.produto = 'CrÃ©dito 1x' THEN 
+      t.valorbruto - (t.valorbruto * (SELECT percentage FROM historicocredito WHERE tipo = 'credito'))
+    WHEN t.produto = 'DÃ©bito PrÃ©-pago' THEN 
+      t.valorbruto - (t.valorbruto * (SELECT percentage FROM historicocredito WHERE tipo = 'debito'))
+    WHEN t.produto = 'Voucher' THEN 
+      t.valorbruto - (t.valorbruto * (SELECT percentage FROM historicocredito WHERE tipo = 'alimentacao'))
+    ELSE t.valorbruto
+  END;
+
+DESATIVAR A CONFIG 
+
+#SET SQL_SAFE_UPDATES = 0;
+
+SOMA DE TODAS AS VENDAS DE CADA MAQUININHA 
+
+SELECT * FROM simplisaldo.movements;SELECT 
+    t.numeroserie, 
+    SUM(t.valorbruto) AS total_valorbruto
+FROM transactions t
+GROUP BY t.numeroserie;
+
+
+UPDATE movements
+SET Total = 0.00, TotalPorcentage = 0.00;
+
+
+DROP TRIGGER IF EXISTS after_transaction_insert;
+
+CONSULTA POR PORCENTAGEM // CONSULTANDO CADA TIPO POR MAQUININHA 
+
+SELECT 
+    t.NumeroSerie, -- Número da maquininha
+    t.produto,
+    SUM(t.valorbruto) AS Total_Sem_Porcentagem, -- Total sem a porcentagem
+    SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Total_Com_Porcentagem, -- Total com a porcentagem aplicada
+    SUM(t.valorbruto) - SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Diferenca -- Subtração entre o total sem e com a porcentagem
+FROM movements m
+INNER JOIN transactions t ON m.NumeroSerie = t.NumeroSerie
+INNER JOIN historicocredito h ON t.produto LIKE 'CrÃ©dito%' AND h.tipo = 'Credito'
+WHERE t.NumeroSerie = 'PB09245U73822' -- Substitua pelo número da maquininha desejada
+GROUP BY t.NumeroSerie, t.produto;
+
+SELECT 
+    t.NumeroSerie, -- Número da maquininha
+    t.produto,
+    SUM(t.valorbruto) AS Total_Sem_Porcentagem, -- Total sem a porcentagem
+    SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Total_Com_Porcentagem, -- Total com a porcentagem aplicada
+    SUM(t.valorbruto) - SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Diferenca -- Subtração entre o total sem e com a porcentagem
+FROM movements m
+INNER JOIN transactions t ON m.NumeroSerie = t.NumeroSerie
+INNER JOIN historicocredito h ON t.produto LIKE 'DÃ©bito%' AND h.tipo = 'Debito'
+WHERE t.NumeroSerie = 'PB09245U73822' -- Substitua pelo número da maquininha desejada
+GROUP BY t.NumeroSerie, t.produto;
+
+SELECT 
+    t.NumeroSerie, -- Número da maquininha
+    t.produto,
+    SUM(t.valorbruto) AS Total_Sem_Porcentagem, -- Total sem a porcentagem
+    SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Total_Com_Porcentagem, -- Total com a porcentagem aplicada
+    SUM(t.valorbruto) - SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Diferenca -- Subtração entre o total sem e com a porcentagem
+FROM movements m
+INNER JOIN transactions t ON m.NumeroSerie = t.NumeroSerie
+INNER JOIN historicocredito h ON t.produto = 'Voucher' AND h.tipo = 'Alimentacao'
+WHERE t.NumeroSerie = 'PB09245U73822' -- Substitua pelo número da maquininha desejada
+GROUP BY t.NumeroSerie, t.produto;
+
+
+CONSULTA COM TODOS OS TIPOS E DIVIDINDO POR MAQUININHA // RETORNA O RESULTADO DA DIMINUIÇÃO DE VALORES COM - SEM A PORCENTAGEM 
+SELECT 
+    t.NumeroSerie, -- Número da maquininha
+    SUM(t.valorbruto) AS Total_Sem_Porcentagem, -- Total sem a porcentagem
+    SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Total_Com_Porcentagem, -- Total com a porcentagem aplicada
+    SUM(t.valorbruto) - SUM(t.valorbruto - (t.valorbruto * h.percentage)) AS Diferenca_Total -- Subtração entre o total sem e com a porcentagem
+FROM movements m
+INNER JOIN transactions t ON m.NumeroSerie = t.NumeroSerie
+INNER JOIN historicocredito h 
+    ON (t.produto LIKE 'Crédito%' AND h.tipo = 'Credito')
+    OR (t.produto LIKE 'Débito%' AND h.tipo = 'Debito')
+    OR (t.produto = 'Voucher' AND h.tipo = 'Alimentacao')
+GROUP BY t.NumeroSerie;
+
+
+
+
+DELIMITER $$
+
+CREATE TRIGGER after_transaction_insert
+AFTER INSERT ON transactions
+FOR EACH ROW
+BEGIN
+    DECLARE Total_Sem_Porcentagem DECIMAL(10,2);
+    DECLARE Total_Com_Porcentagem DECIMAL(10,2);
+    DECLARE Diferenca_Total DECIMAL(10,2);
+
+    -- Calculando o total sem porcentagem (soma de todas as transações por maquininha)
+    SELECT COALESCE(SUM(valorbruto), 0)
+    INTO total_sem_porcentagem
+    FROM transactions 
+    WHERE NumeroSerie = NEW.NumeroSerie;
+
+    -- Calculando o total com a porcentagem aplicada
+    SELECT COALESCE(SUM(t.valorbruto - (t.valorbruto * h.percentage)), 0)
+    INTO total_com_porcentagem
+    FROM transactions t
+    INNER JOIN historicocredito h 
+        ON (t.produto LIKE 'Crédito%' AND h.tipo = 'Credito')
+        OR (t.produto LIKE 'Débito%' AND h.tipo = 'Debito')
+        OR (t.produto = 'Voucher' AND h.tipo = 'Alimentacao')
+    WHERE t.NumeroSerie = NEW.NumeroSerie;
+
+    -- Calculando a diferença entre os valores
+    SET diferenca_total = total_sem_porcentagem - total_com_porcentagem;
+
+    -- Inserindo os valores calculados na tabela `totcredito`
+    INSERT INTO totcredito (NumeroSerie, Total_Sem_Porcentagem, Total_Com_Porcentagem, Diferenca_Total)
+    VALUES (NEW.NumeroSerie, Total_Sem_Porcentagem, Total_Com_Porcentagem, Diferenca_Total)
+    ON DUPLICATE KEY UPDATE 
+        Total_Sem_Porcentagem = Total_Sem_Porcentagem,
+        Total_Com_Porcentagem = Total_Com_Porcentagem,
+        Diferenca_Total = Diferenca_Total;
+
+    -- Atualizando os valores na tabela `movements`
+    UPDATE movements
+    SET Total = Total_Sem_Porcentagem,
+        TotalPorcentage = Total_Com_Porcentagem
+    WHERE NumeroSerie = NEW.NumeroSerie;
+END$$
+
+DELIMITER ;
+
+
+
+
